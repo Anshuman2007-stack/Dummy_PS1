@@ -1,267 +1,211 @@
-# UGV EKF Localisation and Target Navigation (ROS 2 + Gazebo)
+# UGV EKF Localisation, Navigation and Wheel Control (ROS 2 + Gazebo)
 
-Simulation of a differential-drive UGV that estimates its own state by fusing
-**wheel odometry + IMU + GPS** in an **Extended Kalman Filter**, then drives to a
-target `(x, y)` typed in by the user.
+A complete navigation and control stack for a **four-wheel differential-drive (skid-steer) UGV**
+in simulation. Given only a target `(x, y)`, the robot:
+
+1. estimates its state `(x, y, θ, v, ω)` by fusing **IMU + wheel-encoder odometry + GPS** in an EKF;
+2. computes `(v, ω)` towards the target with a navigation control law;
+3. converts `(v, ω)` into **four individual wheel speeds**;
+4. tracks those speeds with **one PID per wheel** (feed-forward, saturation, anti-windup) that
+   outputs PWM duty to a motor model driving each Gazebo wheel joint.
 
 ```
- Gazebo ──► /odom/wheels ─┐
- Gazebo ──► /imu/data ────┼─► EKF ──► /ekf/odom ──► Navigation ──► /cmd_vel ──► Gazebo DiffDrive
- true_pose_gps ► /gnss/fix┘  (ekf_node)             (navigation_pid_node)
-        ▲                                                  ▲
-   /true_odom (ground truth)                       /goal_pose ◄── goal_pose_node (keyboard)
+          /goal_pose
+              │
+  ┌──────────▼─────────┐ /cmd_vel ┌───────────────┐ /wheel_cmd ┌──────────────┐ /wheel_pwm ┌────────────────┐
+  │ navigation_node    ├────────►│kinematics_node├──────────►│wheel_pid_node├──────────►│motor_driver_sim├─► Gazebo
+  └──────────▲─────────┘          └───────────────┘            └──────▲───────┘            └────────────────┘  4 wheel
+             │ /ekf/odom + TF odom→base_link                          │ /wheel_states                         torques
+  ┌──────────┴─────────┐ /odom/wheels ┌─────────────────────┐         │                                     │
+  │ ekf_node           │◄─────────────┤ wheel_odometry_node ├─────────┘◄──────── /joint_states ◄───────────┤
+  │                    │◄── /imu/data ◄──────────────────────────────────────────────────────────────────── ┤
+  │                    │◄── /gnss/fix ◄── gps_node ◄── /true_odom ◄────────────────────────────────────────┘
+  └────────────────────┘
 ```
 
-> Status against the problem statement, and what is still missing, is listed in
-> [Project status](#project-status). Please read it before submitting.
+## Problem-statement coverage
 
----
+| # | Stage | Implementation | Run on its own |
+|---|---|---|---|
+| 1 | Sensor interfaces | Gazebo IMU (100 Hz) and wheel joint encoders → `wheel_odometry_node` quantises angles into **encoder ticks** (8192/rev) and **computes odometry** from them; `gps_node` = 5 Hz GNSS with noise + dropout | `ros2 launch ugv_sensors sensors.launch.py` |
+| 2 | EKF fusion | `ekf_node`: state `(x, y, θ, v, ω)`, wheel twist + gyro + GPS, each fused at its own time stamp (multi-rate), χ² gating, dropout handling, publishes **TF `odom→base_link`** | `ros2 launch ugv_nav ekf.launch.py` |
+| 3 | Target navigation | `navigation_node`: rotate-then-drive, PID on heading/distance, `cos e` speed scaling, slew limits; convergence proof in `docs/math.md` | `ros2 launch ugv_nav navigation.launch.py` |
+| 4 | Diff-drive kinematics (4 wheels) | `kinematics_node`: `(v, ω)` → FL, RL, FR, RR wheel speeds with skid-steer slip factor and curvature-preserving saturation | `ros2 launch ugv_control control.launch.py` |
+| 5 | Per-wheel PID | `wheel_pid_node`: 4 identical PIDs, static + acceleration feed-forward, duty saturation, **anti-windup** (clamp / back-calculation) | same, plus `pid_step_test.launch.py` |
+| 6 | End-to-end | `ros2 launch ugv_bringup full_system.launch.py`: one closed loop, consistent TF tree, nested per-stage launch files | ← |
+| – | Optional hardware | PID outputs PWM duty already; see [`docs/hardware.md`](docs/hardware.md) | |
+
+Real-world effects modelled: sensor noise, multi-rate fusion, GPS dropout, wheel slip and odometry
+drift, actuator saturation, TF consistency. Details are in [`docs/evaluation.md`](docs/evaluation.md) §4.
 
 ## 1. Repository layout
 
 ```
 ugv-ekf-navigation/
 ├── src/
-│   ├── my_bot_sim/        Stage 1  Gazebo world, robot model, bridge, true_pose_gps (GPS source)
-│   ├── ugv_nav/           Stage 2+3  ekf_node, navigation_pid_node, goal_pose_node, params
-│   └── ugv_bringup/       Stage 6  one launch file that starts everything
-├── scripts/               setup.sh · check_system.sh · kill_sim.sh
-├── docs/                  architecture · maths · PID tuning · evaluation
-├── README.md  LICENSE  .gitignore
+│   ├── ugv_core/      algorithms without ROS (ekf, kinematics, odometry, navigator, pid,
+│   │                  wheel_control, geo, metrics) + config/robot.yaml + unit tests
+│   ├── my_bot_sim/    Stage 0  world, 4-wheel SDF model, URDF (TF), bridge, motor_driver_sim
+│   ├── ugv_sensors/   Stage 1  wheel_odometry_node, gps_node
+│   ├── ugv_nav/       Stage 2-3  ekf_node, navigation_node, goal_pose_node, ekf_eval_node, mission_node
+│   ├── ugv_control/   Stage 4-5  kinematics_node, wheel_pid_node, pid_step_test, slip_calibration
+│   └── ugv_bringup/   Stage 6  full_system, eval_ekf, eval_navigation launch files
+├── tools/offline_sim/ physics model + evaluation runner + ROS-node harness (no ROS needed)
+├── docs/              architecture · math · pid_tuning · evaluation · hardware · results/
+└── scripts/           setup.sh · check_system.sh · kill_sim.sh
 ```
-
-| Stage | Package / file | Run on its own with |
-|---|---|---|
-| 1 Sensor interfaces | `my_bot_sim` | `ros2 launch my_bot_sim sim.launch.py` |
-| 2 EKF fusion | `ugv_nav/ekf_node.py` | `ros2 launch ugv_nav ekf.launch.py` |
-| 3 Target navigation | `ugv_nav/navigation_pid_node.py` | `ros2 launch ugv_nav navigation.launch.py` |
-| – Goal input (keyboard) | `ugv_nav/goal_pose_node.py` | `ros2 run ugv_nav goal_pose_node` |
-| 4 Kinematics, 5 wheel PID | *not implemented yet* – see [Project status](#project-status) | |
-| 6 End-to-end | `ugv_bringup` | `ros2 launch ugv_bringup full_system.launch.py` |
 
 ## 2. Requirements
 
-* Ubuntu 22.04 + **ROS 2 Humble** + **Gazebo Fortress** (Ignition Gazebo 6). The SDF files use the
-  Fortress plugin names (`ignition-gazebo-*`) and the bridge uses `ignition.msgs.*` types.
-  This will **not** load on Garden/Harmonic without renaming them.
-* `ros-humble-ros-gz` (provides `ros_gz_sim`, `ros_gz_bridge`; pulls in Fortress), `python3-numpy`,
-  `xterm` (for the goal-input window), `colcon`, `rosdep`.
+* Ubuntu 22.04, **ROS 2 Humble**, **Gazebo Fortress** (`ros-humble-ros-gz`). The SDF uses the
+  Fortress plugin names (`ignition-gazebo-*`) and the bridge uses `ignition.msgs.*`.
+* `ros-humble-robot-state-publisher`, `ros-humble-tf2-ros`, `python3-numpy`, `xterm` (goal window).
+* Offline tools only: `python3-yaml`, `python3-matplotlib`.
 
-## 3. Build (step by step)
+## 3. Build
 
 ```bash
-# 1. Install ROS 2 Humble: https://docs.ros.org/en/humble/Installation.html
-sudo apt install ros-humble-desktop ros-humble-ros-gz
-ign gazebo --version        # should print 6.x (Fortress). If 'ign' is missing, install ignition-fortress
-                            # from the OSRF apt repo: https://gazebosim.org/docs/fortress/install_ubuntu
-
-# 2. Get the code
-git clone https://github.com/<your-user>/ugv-ekf-navigation.git
-cd ugv-ekf-navigation
-
-# 3. Install dependencies and build (or run ./scripts/setup.sh)
+sudo apt install ros-humble-desktop ros-humble-ros-gz xterm
+git clone https://github.com/<your-user>/ugv-ekf-navigation.git && cd ugv-ekf-navigation
 source /opt/ros/humble/setup.bash
-rosdep update
-rosdep install --from-paths src --ignore-src -r -y
-sudo apt install xterm
+rosdep update && rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
-
-# 4. Source the workspace (needed in EVERY new terminal)
-source install/setup.bash
+source install/setup.bash                       # in EVERY new terminal
 ```
 
-Verify the build: `ros2 pkg list | grep -E "my_bot_sim|ugv_nav|ugv_bringup"` should print all three.
+Or run `./scripts/setup.sh`. Check the build with `ros2 pkg list | grep -E "ugv_|my_bot_sim"`,
+which should list 6 packages.
 
-## 4. Run the whole project (one command)
+## 4. Run the whole system
 
 ```bash
-source install/setup.bash
-ros2 launch ugv_bringup full_system.launch.py
+ros2 launch ugv_bringup full_system.launch.py            # headless:=true  goal_input:=none
 ```
 
-This starts: Gazebo + world + robot, the ROS↔Gazebo bridge, `true_pose_gps`, `ekf_node`,
-`navigation_pid_node` and `goal_pose_node` (in an xterm window).
-
-Launch arguments:
-
-| Argument | Default | Meaning |
-|---|---|---|
-| `headless` | `false` | `true` = Gazebo server only, no GUI |
-| `goal_input` | `auto` | `auto` / `xterm` / `gnome-terminal` / `none`. `none` = start `goal_pose_node` yourself |
-
-### Send the robot to a target
-
-1. **Wait ~5 s without moving the robot** until the `ekf_node` log prints
-   `GPS origin set. Ready for goals.` (it averages the first 20 GPS fixes).
-2. In the goal window type `x y` in metres and press Enter, e.g. `4 5`.
-   Type `pos` to see the current estimate, `q` to quit. A new goal replaces the old one.
-3. Goals are in the EKF `odom` frame, which starts at `(0, 0)` where the robot spawns
-   (= the world origin).
-
-No xterm window? Use a second terminal:
+Wait for `EKF initialised at (0, 0, 0). Ready for goals.`, then type a goal in the xterm
+window, for example `4 5` (metres in the odom/world frame; `pos` shows the estimate, `q` quits).
+Without the window:
 
 ```bash
-source install/setup.bash
-ros2 run ugv_nav goal_pose_node
-```
-
-Or publish a goal directly:
-
-```bash
+ros2 run ugv_nav goal_pose_node --ros-args -p use_sim_time:=true
+# or
 ros2 topic pub --once /goal_pose geometry_msgs/msg/PoseStamped \
-  "{header: {frame_id: odom}, pose: {position: {x: 4.0, y: 5.0}, orientation: {w: 1.0}}}"
+  "{header: {frame_id: odom}, pose: {position: {x: 4.0, y: 5.0}}}"
 ```
 
-## 5. Run stage by stage (for testing each block independently)
+The world has coloured pads at the evaluation goals (4, 0), (0, 4), (−3, −3) and (5, −2).
+Check health with `./scripts/check_system.sh`.
 
-Use a separate terminal for each command (source the workspace in each).
+## 5. Run stage by stage
+
+Launch files nest (sim ⊂ sensors ⊂ control), so each command below starts everything it needs.
 
 ```bash
-# Stage 1 - sensors only: Gazebo + robot + bridge + GPS
-ros2 launch my_bot_sim sim.launch.py
-#   check:  ros2 topic hz /odom/wheels /imu/data /gnss/fix
-#   drive:  ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.2}}"
+# Stage 1 – sensors: Gazebo + encoders/odometry + GPS
+ros2 launch ugv_sensors sensors.launch.py
+ros2 topic hz /wheel_states /odom/wheels /imu/data /gnss/fix
 
-# Stage 2 - add the EKF (robot must stay still for the first ~5 s)
+# Stages 4+5 – kinematics + wheel PIDs; drive by hand
+ros2 launch ugv_control control.launch.py
+ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.3}}"      # straight
+ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{angular: {z: 0.8}}"     # spin
+ros2 topic echo /wheel_cmd ; ros2 topic echo /wheel_pid/state                  # ref|meas|duty x4
+ros2 launch ugv_control pid_step_test.launch.py                                 # step metrics
+ros2 run ugv_control slip_calibration --ros-args -p use_sim_time:=true          # measure chi
+
+# Stage 2 – add the EKF (in a second terminal, with control.launch.py running)
 ros2 launch ugv_nav ekf.launch.py
-#   check:  ros2 topic echo /ekf/odom --field pose.pose.position
-#   compare against /true_odom (see Debugging)
+ros2 topic echo /ekf/odom --field pose.pose.position
+ros2 run tf2_ros tf2_echo odom base_link
 
-# Stage 3 - add the navigation controller
+# Stage 3 – add navigation
 ros2 launch ugv_nav navigation.launch.py
-ros2 run ugv_nav goal_pose_node          # then type:  3 2
+ros2 run ugv_nav goal_pose_node --ros-args -p use_sim_time:=true
 ```
 
-Or the last two together: `ros2 launch ugv_nav nav_stack.launch.py`.
+GPS dropout by hand: `ros2 topic pub --once /gnss/enable std_msgs/msg/Bool "{data: false}"`
+(and `true` to restore), or set `dropout_start`/`dropout_duration` in `ugv_sensors/config/sensors.yaml`.
 
-## 6. Debugging cheat-sheet
+## 6. Evaluation
 
-### Is everything alive?
+Results and plots: [`docs/evaluation.md`](docs/evaluation.md), generated tables in
+[`docs/results/results.md`](docs/results/results.md).
+
+In Gazebo (each prints a results table and writes CSV/summary files):
 
 ```bash
-./scripts/check_system.sh                 # nodes + topic data + rates, PASS/FAIL
-ros2 node list                            # expect: true_pose_gps ekf_node navigation_pid_node goal_input (+ ros_gz_bridge)
-ros2 topic list -t
-ros2 run rqt_graph rqt_graph              # visual node/topic graph
+ros2 launch ugv_control pid_step_test.launch.py   headless:=true output_dir:=$HOME/ugv_results
+ros2 launch ugv_bringup eval_ekf.launch.py        headless:=true output_dir:=$HOME/ugv_results
+ros2 launch ugv_bringup eval_navigation.launch.py headless:=true output_dir:=$HOME/ugv_results
+ros2 launch ugv_bringup eval_navigation.launch.py goals:="[3.0, 3.0, -2.0, 1.0]" gps_dropout:="[10.0, 15.0]"
 ```
 
-### Sensors (Stage 1)
+`goals` must be floats (`3.0`, not `3`). Without ROS, using the identical algorithm code and the
+real node classes:
 
 ```bash
-ign topic -l                              # topics inside Gazebo: /imu /navsat /model/my_bot/odometry /true_odom /cmd_vel
-ign topic -e -t /imu -n 1                 # one raw Gazebo IMU message
-ros2 topic hz /odom/wheels                # ~50 Hz
-ros2 topic hz /imu/data                   # ~100 Hz
-ros2 topic hz /gnss/fix                   # ~5 Hz
-ros2 topic echo /odom/wheels --once
-ros2 topic echo /imu/data --field angular_velocity --once
-ros2 topic echo /gnss/fix --field latitude --once
+python3 -m pytest src/ugv_core/test/test_core.py      # 23 unit tests
+python3 tools/offline_sim/run_evaluation.py           # regenerates docs/results/
+python3 tools/offline_sim/ros_harness.py              # runs all ROS nodes closed-loop
 ```
 
-Drive manually and confirm the sensors react (`Ctrl-C`, then send zeros to stop):
+Headline numbers (offline model, 5 seeds): EKF position RMSE **4–6 cm** (raw GPS 42 cm; encoder
+odometry drifts 29 cm on a 9 m line), worst error during a 10 s GPS dropout **6.4 cm**. All
+navigation goals reached with **0.04–0.10 m** final error and no oscillation. Wheel step response
+**3 %** overshoot, **0.2 s** settling, zero steady-state error, left/right mismatch < 0.02 rad/s.
 
-```bash
-ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.2}, angular: {z: 0.0}}"   # straight
-ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0}, angular: {z: 0.5}}"   # spin
-ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{}"                                     # stop
-# keyboard alternative: sudo apt install ros-humble-teleop-twist-keyboard
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
-```
+## 7. Topics, frames, parameters
 
-### EKF (Stage 2): estimate vs ground truth
+| Topic | Type | From → To |
+|---|---|---|
+| `/joint_states` | `sensor_msgs/JointState` | Gazebo → wheel_odometry_node, robot_state_publisher |
+| `/wheel_states` | `sensor_msgs/JointState` | wheel_odometry_node → wheel_pid_node (encoder speeds) |
+| `/odom/wheels` | `nav_msgs/Odometry` | wheel_odometry_node → ekf_node |
+| `/imu/data` | `sensor_msgs/Imu` | Gazebo → ekf_node |
+| `/gnss/fix` | `sensor_msgs/NavSatFix` | gps_node → ekf_node |
+| `/gnss/enable` | `std_msgs/Bool` | user / eval nodes → gps_node (dropout) |
+| `/true_odom` | `nav_msgs/Odometry` | Gazebo → gps_node, evaluation only |
+| `/ekf/odom` + TF | `nav_msgs/Odometry` | ekf_node → navigation_node |
+| `/goal_pose` | `geometry_msgs/PoseStamped` | goal_pose_node / mission_node → navigation_node |
+| `/cmd_vel` | `geometry_msgs/Twist` | navigation_node → kinematics_node |
+| `/wheel_cmd` | `std_msgs/Float64MultiArray` | kinematics_node → wheel_pid_node (FL, RL, FR, RR rad/s) |
+| `/wheel_pwm` | `std_msgs/Float64MultiArray` | wheel_pid_node → motor_driver_sim (duty −1…1) |
+| `/model/my_bot/joint/*/cmd_force` | `std_msgs/Float64` | motor_driver_sim → Gazebo (N·m) |
 
-```bash
-ros2 topic echo /ekf/odom  --field pose.pose.position --once
-ros2 topic echo /true_odom --field pose.pose.position --once     # same frame when spawned at (0,0,yaw 0)
-ros2 topic echo /ekf/odom  --field pose.covariance                # shrinking P = healthy filter
-ros2 topic hz /ekf/odom                                           # ~50 Hz
-```
+TF: `odom → base_link` (EKF) → `chassis_link`, `imu_link`, `gnss_link`, 4 wheels
+(robot_state_publisher). The robot spawns at the world origin with yaw 0, so `odom` coincides
+with the Gazebo world frame and `/true_odom` can be compared directly.
 
-Plot them together: `ros2 run plotjuggler plotjuggler` (install `ros-humble-plotjuggler-ros`)
-or `ros2 run rqt_plot rqt_plot /ekf/odom/pose/pose/position/x /true_odom/pose/pose/position/x`.
+Parameters: `ugv_core/config/robot.yaml` (geometry, motor, slip factor, shared by all nodes),
+`ugv_sensors/config/sensors.yaml`, `ugv_control/config/control.yaml`, `ugv_nav/config/ugv_nav.yaml`.
+Edit and relaunch; with `--symlink-install` no rebuild is needed.
 
-### Navigation (Stage 3)
+Robot: 4 wheels, r = 0.1 m, track 0.4 m, wheelbase 0.3 m, 7 kg; motors 5 N·m stall,
+10 rad/s no-load; limits 0.4 m/s and 1.2 rad/s (navigation), 8 rad/s per wheel.
 
-```bash
-ros2 topic echo /goal_pose --once
-ros2 topic echo /cmd_vel                  # should go to 0 when "Goal reached." is logged
-ros2 topic info /goal_pose -v             # navigation_pid_node must appear as a subscriber
-```
-
-The controller logs its state every 0.5 s: `ROTATE | DRIVE | ALIGN` with distance, heading error and command.
-
-### Record a run (for the evaluation section)
-
-```bash
-ros2 bag record -o run_01 /ekf/odom /true_odom /odom/wheels /imu/data /gnss/fix /cmd_vel /goal_pose
-ros2 bag info run_01
-```
-
-### Parameters
-
-Edit `src/ugv_nav/config/ugv_nav.yaml` and relaunch (with `--symlink-install` no rebuild is needed).
-The nodes read their parameters once at start-up, so `ros2 param set` has no effect on a running node.
-
-```bash
-ros2 param list /ekf_node
-ros2 param get /navigation_pid_node goal_tol
-```
-
-### Common problems
+## 8. Debugging
 
 | Symptom | Likely cause / fix |
 |---|---|
-| `Package 'my_bot_sim' not found` | Forgot `source install/setup.bash` in this terminal. |
-| `executable 'true_pose_gps.py' not found` | Stale build. `rm -rf build install log && colcon build --symlink-install`. |
-| Gazebo opens, no robot | Check the `create` node output; world/model paths come from the installed package share dir. |
-| `/odom/wheels`, `/imu/data` empty | Bridge not running or Gazebo paused (world is started with `-r`). Compare `ign topic -l` with `ros2 topic list`. |
-| `/true_odom` missing, GPS silent | `true_pose_gps` waits for `/true_odom`. Check the bridge line and the plugin name in `model.sdf`; the error text is in the bridge/Gazebo log. |
-| EKF never prints `GPS origin set` | No `/gnss/fix` (see above). It needs 20 fixes (~4 s at 5 Hz). |
-| Robot ignores goals | `ros2 topic info /goal_pose -v` – is the controller subscribed? Is `/ekf/odom` publishing? |
-| Estimate jumps or drifts | Make sure the robot was still during GPS-origin averaging; check `gps_sigma` equals the noise in `true_pose_gps.py`. |
-| Robot oscillates near goal | Raise `goal_tol` or lower the gains in `navigation_pid_node.py`. |
-| Goal window did not open | Install xterm, or `goal_input:=none` and run `ros2 run ugv_nav goal_pose_node` in another terminal. |
-| `Failed to load system plugin [gz-sim-...]` or a robot that does not move | Plugin names from Garden/Harmonic. In Fortress they must be `ignition-gazebo-*-system` / `ignition::gazebo::systems::*` (already done in this repo's SDF files). |
-| Bridge error `unsupported/unknown type ... gz.msgs` | On Fortress the bridge types are `ignition.msgs.*`. |
-| `ign: command not found` | Fortress not installed: `sudo apt install ros-humble-ros-gz` or install `ignition-fortress` from the OSRF repo. |
-| Stale processes / Gazebo won't restart | `./scripts/kill_sim.sh` |
-| Weird behaviour after editing files | `colcon build --symlink-install --packages-select <pkg>` then re-source. |
+| `Package ... not found` | `source install/setup.bash` in this terminal. |
+| Robot does not move, `/wheel_pwm` is non-zero | Check `ros2 topic echo /model/my_bot/joint/front_left_wheel_joint/cmd_force`; check the bridge log for the `cmd_force` lines; the ApplyJointForce plugin name must be `ignition-gazebo-apply-joint-force-system` (Fortress). |
+| `No /wheel_states - motors off` keeps repeating | `/joint_states` is missing: the JointStatePublisher topic is `/world/my_world/model/my_bot/joint_state`; check with `ign topic -l`. One warning at start-up is normal. |
+| Nodes stuck at time 0 | `/clock` not bridged or Gazebo paused (the world starts with `-r`). |
+| Robot turns too slowly or too fast for the command | Recalibrate `slip_factor` with `slip_calibration`. |
+| Wheels oscillate | Lower `kp` in `control.yaml`; check `/wheel_pid/state` in PlotJuggler. |
+| Estimate jumps | `gps_node` `sigma` must match reality; inspect `/ekf/odom` covariance. |
+| Robot circles the goal | Lower `kp_lin` or raise `goal_tol` in `ugv_nav.yaml`. |
+| `Failed to load system plugin [gz-sim-...]` | Garden/Harmonic names; this repo targets Fortress. |
+| Stale processes | `./scripts/kill_sim.sh` |
 
-## 7. Topics and frames
+## 9. Status
 
-| Topic | Type | Producer | Consumer |
-|---|---|---|---|
-| `/cmd_vel` | `geometry_msgs/Twist` | `navigation_pid_node` | Gazebo DiffDrive (via bridge) |
-| `/odom/wheels` | `nav_msgs/Odometry` | Gazebo DiffDrive (encoder odometry) | `ekf_node` |
-| `/imu/data` | `sensor_msgs/Imu` | Gazebo IMU | `ekf_node` |
-| `/gnss/fix` | `sensor_msgs/NavSatFix` | `true_pose_gps` | `ekf_node` |
-| `/true_odom` | `nav_msgs/Odometry` | Gazebo OdometryPublisher | `true_pose_gps`, evaluation only |
-| `/ekf/odom` | `nav_msgs/Odometry` | `ekf_node` | `navigation_pid_node`, `goal_pose_node` |
-| `/goal_pose` | `geometry_msgs/PoseStamped` | `goal_pose_node` | `navigation_pid_node` |
+All six stages are implemented. They have been verified with 23 unit tests, a 5-seed offline
+evaluation, and a closed-loop run of every ROS node against a physics model (`tools/offline_sim`).
+The Gazebo runs (level C in `docs/evaluation.md`) still have to be performed on a Humble
+machine and their tables filled in. If Gazebo's contact model behaves differently from the
+offline model, re-run `slip_calibration` and `pid_step_test` first.
 
-Robot: wheel radius 0.1 m, wheel separation 0.4 m, limits 0.5 m/s and 1.5 rad/s.
-GPS: 5 Hz, σ = 0.3 m, origin 22.62° N, 75.69° E (must match `LAT0/LON0` in `true_pose_gps.py` and `my_world.sdf`).
-
-More detail: [architecture](docs/architecture.md), [maths](docs/math.md),
-[PID tuning](docs/pid_tuning.md), [evaluation](docs/evaluation.md).
-
-## 8. Project status
-
-Checked against the problem statement (Section 1.4):
-
-| # | Stage | State |
-|---|---|---|
-| 1 | Sensor interfaces | Done. Wheel odometry comes from Gazebo's DiffDrive plugin, not computed from raw encoder ticks. |
-| 2 | EKF fusion | Done: state `(x, y, θ, v, ω)`, wheel + gyro + IMU yaw + GPS with chi-square gating. |
-| 3 | Target navigation | Done: rotate → drive state machine with PID on heading and distance. |
-| 4 | Diff-drive kinematics (4 wheels) | **Missing.** `/cmd_vel` goes straight to Gazebo's DiffDrive plugin. |
-| 5 | Per-wheel PID with anti-windup | **Missing.** The only PID is the heading/distance one in the navigation node. |
-| 6 | Integration + TF | Launch files done. **No `odom → base_link` TF is published yet** (the EKF only publishes `Odometry`). |
-
-Also open: the model has two driven wheels plus casters (problem statement says four-wheel);
-GPS dropout, wheel slip and actuator saturation scenarios are not yet exercised;
-the evaluation results in `docs/evaluation.md` still have to be measured.
-
-## 9. License
+## 10. License
 
 MIT, see [LICENSE](LICENSE).
