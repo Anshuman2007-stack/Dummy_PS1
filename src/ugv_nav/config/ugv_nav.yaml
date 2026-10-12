@@ -1,20 +1,37 @@
-# Tunable parameters. Values are the defaults that were hard-coded in the nodes.
-# Edit here (no rebuild needed with `colcon build --symlink-install`).
-
+# Stages 2 and 3. Edit and relaunch (no rebuild needed with --symlink-install).
 ekf_node:
   ros__parameters:
-    gps_sigma: 0.3          # m - must match the GPS noise in true_pose_gps.py (SIGMA)
-    gps_gate: 9.21          # chi-square gate, 2 dof, 99 %
-    gps_init_samples: 20    # fixes averaged to set the GPS origin (robot must be still)
-    use_imu_yaw: true       # fuse IMU orientation yaw as a heading measurement
+    publish_rate: 50.0           # Hz, /ekf/odom + TF odom->base_link
+    publish_tf: true
+    q_pos: 0.0001                # process noise densities (per second), tuned offline
+    q_theta: 0.00001
+    q_v: 0.5
+    q_omega: 0.5
+    gyro_var: 0.0001             # (rad/s)^2 (sensor sigma 0.002, inflated for timing jitter)
+    use_imu_yaw: false           # Gazebo IMU orientation is noise-free ground truth - see README
+    imu_yaw_var: 0.0004
+    gps_gate: 9.21               # chi-square, 2 dof, 99 %
+    gps_max_rejects: 10          # consecutive rejections before forced resync
+    gps_timeout: 1.0             # s without a fix -> report GPS dropout
+    datum_lat: 22.62             # GPS datum = world origin = odom origin
+    datum_lon: 75.69
 
-navigation_pid_node:
+navigation_node:
   ros__parameters:
-    max_linear: 0.3         # m/s
-    max_angular: 1.0        # rad/s
-    goal_tol: 0.10          # m - goal reached when closer than this
-    steer_freeze: 0.15      # m - stop steering inside this radius (heading is noisy)
-    rotate_done: 0.08       # rad - switch ROTATE -> DRIVE below this heading error
-    rotate_again: 0.6       # rad - switch DRIVE -> ROTATE above this heading error
-    align_final: false      # also turn to the goal orientation at the end
-    align_tol: 0.08         # rad
+    rate: 20.0
+    max_linear: 0.4              # m/s
+    max_angular: 1.2             # rad/s
+    max_lin_acc: 0.6             # m/s^2 slew limit
+    max_ang_acc: 2.5             # rad/s^2 slew limit
+    goal_tol: 0.05               # m (final error is then dominated by EKF accuracy)
+    steer_freeze: 0.15           # m
+    rotate_done: 0.10            # rad
+    rotate_again: 0.70           # rad
+    align_final: false
+    align_tol: 0.08              # rad
+    kp_lin: 0.8
+    ki_lin: 0.0
+    kd_lin: 0.0
+    kp_ang: 2.0
+    ki_ang: 0.0
+    kd_ang: 0.1

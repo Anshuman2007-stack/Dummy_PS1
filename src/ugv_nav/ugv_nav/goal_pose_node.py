@@ -1,9 +1,10 @@
 import math
 import threading
-import rclpy
-from rclpy.node import Node
+
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
+import rclpy
+from rclpy.node import Node
 
 
 class GoalInput(Node):
@@ -36,7 +37,7 @@ def main(args=None):
     # spin in the background so the pose keeps updating while we wait for input
     threading.Thread(target=rclpy.spin, args=(node,), daemon=True).start()
 
-    print("\nEnter a destination as:  x y   (metres, e.g. 4 5)")
+    print("\nEnter a destination as:  x y   (metres in the odom/world frame, e.g. 4 5)")
     print("Commands: 'pos' = show current position, 'q' = quit\n")
 
     try:

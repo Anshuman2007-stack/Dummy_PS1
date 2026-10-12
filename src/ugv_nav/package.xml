@@ -2,8 +2,8 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>ugv_nav</name>
-  <version>0.1.0</version>
-  <description>EKF state estimation and target-based navigation for a diff-drive UGV</description>
+  <version>0.2.0</version>
+  <description>Stages 2-3: EKF state estimation (+ odom->base_link TF) and target-based navigation for a four-wheel UGV</description>
   <maintainer email="you@example.com">anshu</maintainer>
   <license>MIT</license>
 
@@ -11,13 +11,14 @@
   <depend>sensor_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2_ros</depend>
+  <exec_depend>ugv_core</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 
-  <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
-  <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>
 
   <export>
