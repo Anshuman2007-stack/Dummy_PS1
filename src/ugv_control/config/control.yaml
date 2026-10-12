@@ -1,0 +1,21 @@
+# Stages 4 and 5. Robot geometry / motor constants come from ugv_core/config/robot.yaml.
+kinematics_node:
+  ros__parameters:
+    rate: 50.0                   # Hz, /wheel_cmd publish rate
+    cmd_timeout: 0.5             # s without /cmd_vel -> command zero wheel speed
+
+wheel_pid_node:
+  ros__parameters:
+    rate: 100.0                  # Hz control loop
+    kp: 0.12                     # duty per rad/s
+    ki: 2.0                      # duty per rad
+    kd: 0.0
+    d_tau: 0.02                  # s, derivative low-pass
+    duty_limit: 1.0              # |PWM duty| saturation
+    use_feedforward: true        # duty_ff = w_ref / no_load_speed + accel_ff * dw_ref/dt
+    accel_ff: 0.002              # duty per rad/s^2  (~ (J_wheel + m/4 r^2) / stall_torque)
+    max_wheel_accel: 20.0        # rad/s^2 reference ramp (0 = pure step)
+    hold_i_while_ramping: true   # integrate only once the reference has stopped ramping
+    anti_windup: clamp           # clamp | backcalc | none  (see docs/pid_tuning.md)
+    cmd_timeout: 0.5             # s without /wheel_cmd -> zero duty
+
