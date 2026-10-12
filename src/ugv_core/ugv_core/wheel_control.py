@@ -86,7 +86,7 @@ class DCMotor:
     In Gazebo the viscous back-EMF term ``b * w`` (b = stall_torque /
     no_load_speed) is the wheel joint's <damping>, applied by the physics
     engine every step, and only ``stall_torque * duty`` is commanded through
-    the ApplyJointForce plugin. The offline simulator uses both terms.
+    the ApplyJointForce plugin.
     """
 
     def __init__(self, stall_torque=5.0, no_load_speed=10.0):

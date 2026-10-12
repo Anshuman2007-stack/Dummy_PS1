@@ -29,8 +29,8 @@ The scrubbing friction moves the instantaneous centres of rotation of the two wh
 outwards, so the robot behaves like a differential drive with an *effective* track `χB` (χ ≥ 1).
 χ depends on the wheelbase/track ratio and friction. It is measured by spinning on the spot and
 comparing the gyro with the wheels (`ros2 run ugv_control slip_calibration`):
-`χ = r(ω_R − ω_L) / (B·ω_gyro)`. The offline model gives 1.58 and the config uses 1.55.
-Recalibrate it in Gazebo.
+`χ = r(ω_R − ω_L) / (B·ω_gyro)`. The config uses 1.55 (a model of this robot
+on isotropic Coulomb friction gives 1.55–1.58); recalibrate it in Gazebo.
 
 **Saturation.** If a wheel would exceed `max_wheel_speed` (8 rad/s), both sides are multiplied
 by the same factor `s = ω_max / max(|ω_L|, |ω_R|)`. The ratio `ω_L/ω_R`, and therefore the path
@@ -74,7 +74,7 @@ P ← F P Fᵀ + Q·Δt,     Q = diag(1e-4, 1e-4, 1e-5, 0.5, 0.5)   (per second)
 
 `v` and `ω` are random walks. `q_v` and `q_ω` set how fast they may change (acceleration). The
 small `q_pos` and `q_θ` allow for slip that is not explained by `v` and `ω`. These values were
-tuned in the offline simulator: lowering `q_pos` from 1e-3 to 1e-4 cut the stationary position
+tuned on a model of the robot: lowering `q_pos` from 1e-3 to 1e-4 cut the stationary position
 error from 5.4 cm to 3.9 cm, because less GPS noise leaks into the estimate.
 
 ### Measurement updates
@@ -104,8 +104,7 @@ published estimate is extrapolated to "now" at 50 Hz without changing the filter
 example after a long dropout with slip). P is inflated and the fix is accepted.
 
 **GPS dropout.** The receiver publishes `STATUS_NO_FIX`, which the EKF ignores. Prediction plus
-wheel and gyro updates continue, so the position is dead-reckoned and `P_xx, P_yy` grow (see
-`docs/results/ekf_dropout.png`). The first fix afterwards pulls the estimate back.
+wheel and gyro updates continue, so the position is dead-reckoned and `P_xx, P_yy` grow. The first fix afterwards pulls the estimate back.
 
 **Why IMU yaw is off by default.** Gazebo's IMU orientation is the noise-free simulator
 orientation, so fusing it would hide the estimator's real behaviour. Heading comes from
@@ -177,5 +176,4 @@ integration, the default) the integrator is frozen whenever the output is satura
 error pushes further into saturation. `backcalc` (`İ = Ki·e + (u_sat − u)/T_t`) is also
 implemented. It performs worse here because the static feed-forward alone can exceed the limit
 (a 12 rad/s request → `ω/ω₀ = 1.2`). Back-calculation then drives the integrator negative
-to cancel it, and that causes a 27 % undershoot when the request drops. See
-`docs/results/anti_windup.png`.
+to cancel it, and that causes a 27 % undershoot when the request drops.

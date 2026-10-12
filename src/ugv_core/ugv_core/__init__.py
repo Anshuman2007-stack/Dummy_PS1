@@ -1,9 +1,8 @@
 """Pure-Python algorithm library for the UGV stack (no ROS dependency).
 
 Every ROS node in this repository is a thin wrapper around one of these
-classes, and the offline simulator in ``tools/offline_sim`` runs the very
-same classes, so the numbers it produces describe the code that runs on the
-robot.
+classes, so the algorithms can be unit-tested without ROS
+(``python3 -m pytest src/ugv_core/test``).
 
 Modules
 -------

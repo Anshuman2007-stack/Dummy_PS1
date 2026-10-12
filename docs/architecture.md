@@ -81,4 +81,4 @@ is no DiffDrive plugin. `base_link` is on the ground under the chassis centre.
 - **GPS synthesised from ground truth.** Noise, rate and dropout are explicit and
   reproducible (`sensors.yaml`, `/gnss/enable`).
 - **Algorithms in `ugv_core`.** The ROS nodes are thin wrappers, which makes the algorithms
-  unit-testable and lets the offline simulator run the identical code.
+  unit-testable without ROS.

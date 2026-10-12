@@ -50,8 +50,7 @@ ugv-ekf-navigation/
 │   ├── ugv_nav/       Stage 2-3  ekf_node, navigation_node, goal_pose_node, ekf_eval_node, mission_node
 │   ├── ugv_control/   Stage 4-5  kinematics_node, wheel_pid_node, pid_step_test, slip_calibration
 │   └── ugv_bringup/   Stage 6  full_system, eval_ekf, eval_navigation launch files
-├── tools/offline_sim/ physics model + evaluation runner + ROS-node harness (no ROS needed)
-├── docs/              architecture · math · pid_tuning · evaluation · hardware · results/
+├── docs/              architecture · math · pid_tuning · evaluation · hardware
 └── scripts/           setup.sh · check_system.sh · kill_sim.sh
 ```
 
@@ -60,7 +59,6 @@ ugv-ekf-navigation/
 * Ubuntu 22.04, **ROS 2 Humble**, **Gazebo Fortress** (`ros-humble-ros-gz`). The SDF uses the
   Fortress plugin names (`ignition-gazebo-*`) and the bridge uses `ignition.msgs.*`.
 * `ros-humble-robot-state-publisher`, `ros-humble-tf2-ros`, `python3-numpy`, `xterm` (goal window).
-* Offline tools only: `python3-yaml`, `python3-matplotlib`.
 
 ## 3. Build
 
@@ -128,10 +126,8 @@ GPS dropout by hand: `ros2 topic pub --once /gnss/enable std_msgs/msg/Bool "{dat
 
 ## 6. Evaluation
 
-Results and plots: [`docs/evaluation.md`](docs/evaluation.md), generated tables in
-[`docs/results/results.md`](docs/results/results.md).
-
-In Gazebo (each prints a results table and writes CSV/summary files):
+Procedure and result tables: [`docs/evaluation.md`](docs/evaluation.md). Each command prints a
+results table when finished and writes CSV/summary files to `output_dir`:
 
 ```bash
 ros2 launch ugv_control pid_step_test.launch.py   headless:=true output_dir:=$HOME/ugv_results
@@ -140,19 +136,11 @@ ros2 launch ugv_bringup eval_navigation.launch.py headless:=true output_dir:=$HO
 ros2 launch ugv_bringup eval_navigation.launch.py goals:="[3.0, 3.0, -2.0, 1.0]" gps_dropout:="[10.0, 15.0]"
 ```
 
-`goals` must be floats (`3.0`, not `3`). Without ROS, using the identical algorithm code and the
-real node classes:
+`goals` must be floats (`3.0`, not `3`). Unit tests for the algorithms (no ROS needed):
 
 ```bash
-python3 -m pytest src/ugv_core/test/test_core.py      # 23 unit tests
-python3 tools/offline_sim/run_evaluation.py           # regenerates docs/results/
-python3 tools/offline_sim/ros_harness.py              # runs all ROS nodes closed-loop
+python3 -m pytest src/ugv_core/test/test_core.py
 ```
-
-Headline numbers (offline model, 5 seeds): EKF position RMSE **4–6 cm** (raw GPS 42 cm; encoder
-odometry drifts 29 cm on a 9 m line), worst error during a 10 s GPS dropout **6.4 cm**. All
-navigation goals reached with **0.04–0.10 m** final error and no oscillation. Wheel step response
-**3 %** overshoot, **0.2 s** settling, zero steady-state error, left/right mismatch < 0.02 rad/s.
 
 ## 7. Topics, frames, parameters
 
@@ -200,11 +188,9 @@ Robot: 4 wheels, r = 0.1 m, track 0.4 m, wheelbase 0.3 m, 7 kg; motors 5 N·m st
 
 ## 9. Status
 
-All six stages are implemented. They have been verified with 23 unit tests, a 5-seed offline
-evaluation, and a closed-loop run of every ROS node against a physics model (`tools/offline_sim`).
-The Gazebo runs (level C in `docs/evaluation.md`) still have to be performed on a Humble
-machine and their tables filled in. If Gazebo's contact model behaves differently from the
-offline model, re-run `slip_calibration` and `pid_step_test` first.
+All six stages are implemented and the algorithm library has 23 unit tests. Run
+`slip_calibration` and `pid_step_test` first in Gazebo to confirm the slip factor and wheel gains,
+then the two `eval_*` launch files, and record the tables in `docs/evaluation.md`.
 
 ## 10. License
 

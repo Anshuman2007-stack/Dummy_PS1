@@ -3,7 +3,7 @@ ekf_node:
   ros__parameters:
     publish_rate: 50.0           # Hz, /ekf/odom + TF odom->base_link
     publish_tf: true
-    q_pos: 0.0001                # process noise densities (per second), tuned offline
+    q_pos: 0.0001                # process noise densities (per second), see docs/math.md
     q_theta: 0.00001
     q_v: 0.5
     q_omega: 0.5

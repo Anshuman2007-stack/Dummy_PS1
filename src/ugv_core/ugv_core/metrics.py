@@ -1,4 +1,4 @@
-"""Evaluation metrics shared by the ROS test nodes and the offline simulator."""
+"""Evaluation metrics used by the ROS evaluation nodes."""
 import math
 import statistics
 

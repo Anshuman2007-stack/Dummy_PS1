@@ -23,8 +23,7 @@ per unit duty and time constant `J_eff/b ≈ 45 ms`. The feedback is the encoder
    at 20 rad/s², which is achievable without wheelspin.
 3. **Kp/Ki sweep** on a forward step 0 → 3 rad/s (light load) and a spin step ±3 rad/s
    (heavy skid-steer scrubbing load). For each pair we recorded rise time, 2 % settling,
-   overshoot and steady-state error. The sweep script is `tools/offline_sim/ros_harness.py`
-   with the real `wheel_pid_node`, and `sim.py` for fast iteration:
+   overshoot and steady-state error. Results of the sweep:
 
    | Kp | Ki | Extra | Fwd OS | Fwd settle | Spin settle | Note |
    |---|---|---|---|---|---|---|
