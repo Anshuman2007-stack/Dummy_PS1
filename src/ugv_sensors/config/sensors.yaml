@@ -1,0 +1,18 @@
+# Stage 1 - sensor interfaces. Robot geometry comes from ugv_core/config/robot.yaml.
+wheel_odometry_node:
+  ros__parameters:
+    ticks_per_rev: 8192          # 2048-line quadrature encoder (x4 decoding) on the wheel shaft
+    odom_rate: 50.0              # Hz, /odom/wheels
+    wheel_state_rate: 100.0      # Hz, /wheel_states (feedback for the wheel PIDs)
+    velocity_filter_tau: 0.0     # s, low-pass on encoder speed (0 = off)
+    odom_var_v: 0.0025           # (m/s)^2   reported twist covariance
+    odom_var_omega: 0.04         # (rad/s)^2 large: skid-steer turning slips
+
+gps_node:
+  ros__parameters:
+    rate: 5.0                    # Hz
+    sigma: 0.3                   # m, horizontal 1-sigma noise
+    datum_lat: 22.62             # must match <spherical_coordinates> in my_world.sdf
+    datum_lon: 75.69
+    dropout_start: 0.0           # s after the first fix; 0 = no scheduled dropout
+    dropout_duration: 0.0        # s
