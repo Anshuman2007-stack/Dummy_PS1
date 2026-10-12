@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>my_bot_sim</name>
-  <version>0.1.0</version>
-  <description>Gazebo world + diff-drive robot with encoders, IMU and (simulated) GPS</description>
+  <version>0.2.0</version>
+  <description>Gazebo world + four-wheel skid-steer robot (torque-driven wheels, encoders, IMU), bridge and simulated motor driver</description>
   <maintainer email="you@example.com">anshu</maintainer>
   <license>MIT</license>
 
@@ -10,9 +10,10 @@
 
   <exec_depend>ros_gz_sim</exec_depend>
   <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>rclpy</exec_depend>
-  <exec_depend>nav_msgs</exec_depend>
-  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>ugv_core</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 

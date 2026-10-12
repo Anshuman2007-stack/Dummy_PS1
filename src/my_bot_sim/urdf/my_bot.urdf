@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<!--
+  Kinematic description of my_bot for robot_state_publisher (TF + RViz only).
+  Gazebo uses models/my_bot/model.sdf; frames and dimensions here must match it.
+
+  TF tree:
+    odom ──(ekf_node)──► base_link ──► chassis_link
+                                   ├─► imu_link
+                                   ├─► gnss_link
+                                   └─► {front,rear}_{left,right}_wheel   (from /joint_states)
+-->
+<robot name="my_bot">
+  <material name="blue"><color rgba="0.1 0.3 0.8 1"/></material>
+  <material name="black"><color rgba="0.1 0.1 0.1 1"/></material>
+
+  <link name="base_link"/>
+
+  <link name="chassis_link">
+    <visual>
+      <geometry><box size="0.5 0.3 0.1"/></geometry>
+      <material name="blue"/>
+    </visual>
+  </link>
+  <joint name="chassis_joint" type="fixed">
+    <parent link="base_link"/><child link="chassis_link"/>
+    <origin xyz="0 0 0.12" rpy="0 0 0"/>
+  </joint>
+
+  <link name="imu_link"/>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/><child link="imu_link"/>
+    <origin xyz="0 0 0.15" rpy="0 0 0"/>
+  </joint>
+
+  <link name="gnss_link"/>
+  <joint name="gnss_joint" type="fixed">
+    <parent link="base_link"/><child link="gnss_link"/>
+    <origin xyz="0 0 0.2" rpy="0 0 0"/>
+  </joint>
+
+  <!-- wheels: joint axis +y so that positive rotation = forward -->
+  <link name="front_left_wheel">
+    <visual><origin rpy="1.5707963 0 0"/><geometry><cylinder radius="0.1" length="0.05"/></geometry><material name="black"/></visual>
+  </link>
+  <joint name="front_left_wheel_joint" type="continuous">
+    <parent link="base_link"/><child link="front_left_wheel"/>
+    <origin xyz="0.15 0.2 0.1"/><axis xyz="0 1 0"/>
+  </joint>
+
+  <link name="rear_left_wheel">
+    <visual><origin rpy="1.5707963 0 0"/><geometry><cylinder radius="0.1" length="0.05"/></geometry><material name="black"/></visual>
+  </link>
+  <joint name="rear_left_wheel_joint" type="continuous">
+    <parent link="base_link"/><child link="rear_left_wheel"/>
+    <origin xyz="-0.15 0.2 0.1"/><axis xyz="0 1 0"/>
+  </joint>
+
+  <link name="front_right_wheel">
+    <visual><origin rpy="1.5707963 0 0"/><geometry><cylinder radius="0.1" length="0.05"/></geometry><material name="black"/></visual>
+  </link>
+  <joint name="front_right_wheel_joint" type="continuous">
+    <parent link="base_link"/><child link="front_right_wheel"/>
+    <origin xyz="0.15 -0.2 0.1"/><axis xyz="0 1 0"/>
+  </joint>
+
+  <link name="rear_right_wheel">
+    <visual><origin rpy="1.5707963 0 0"/><geometry><cylinder radius="0.1" length="0.05"/></geometry><material name="black"/></visual>
+  </link>
+  <joint name="rear_right_wheel_joint" type="continuous">
+    <parent link="base_link"/><child link="rear_right_wheel"/>
+    <origin xyz="-0.15 -0.2 0.1"/><axis xyz="0 1 0"/>
+  </joint>
+</robot>

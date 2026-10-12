@@ -11,9 +11,9 @@
     <plugin filename="ignition-gazebo-scene-broadcaster-system" name="ignition::gazebo::systems::SceneBroadcaster"/>
     <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors"/>
     <plugin filename="ignition-gazebo-imu-system" name="ignition::gazebo::systems::Imu"/>
-    <plugin filename="ignition-gazebo-navsat-system" name="ignition::gazebo::systems::NavSat"/>
 
-    <!-- heading_deg 0 => world +X = East, +Y = North (ENU) -->
+    <!-- GPS datum. heading_deg 0 => world +X = East, +Y = North (ENU).
+         ugv_sensors/gps_node and the EKF use the same datum (datum_lat/lon params). -->
     <spherical_coordinates>
       <surface_model>EARTH_WGS84</surface_model>
       <latitude_deg>22.62</latitude_deg>
@@ -38,6 +38,54 @@
         <visual name="visual">
           <geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry>
           <material><ambient>0.6 0.6 0.6 1</ambient><diffuse>0.6 0.6 0.6 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- target pad G1 at (4, 0) - visual only, the robot can drive over it -->
+    <model name="target_g1">
+      <static>true</static>
+      <pose>4 0 0.002 0 0 0</pose>
+      <link name="link">
+        <visual name="pad">
+          <geometry><cylinder><radius>0.25</radius><length>0.004</length></cylinder></geometry>
+          <material><ambient>0.92 0.41 0.20 1</ambient><diffuse>0.92 0.41 0.20 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- target pad G2 at (0, 4) - visual only, the robot can drive over it -->
+    <model name="target_g2">
+      <static>true</static>
+      <pose>0 4 0.002 0 0 0</pose>
+      <link name="link">
+        <visual name="pad">
+          <geometry><cylinder><radius>0.25</radius><length>0.004</length></cylinder></geometry>
+          <material><ambient>0.11 0.69 0.48 1</ambient><diffuse>0.11 0.69 0.48 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- target pad G3 at (-3, -3) - visual only, the robot can drive over it -->
+    <model name="target_g3">
+      <static>true</static>
+      <pose>-3 -3 0.002 0 0 0</pose>
+      <link name="link">
+        <visual name="pad">
+          <geometry><cylinder><radius>0.25</radius><length>0.004</length></cylinder></geometry>
+          <material><ambient>0.38 0.31 0.84 1</ambient><diffuse>0.38 0.31 0.84 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- target pad G4 at (5, -2) - visual only, the robot can drive over it -->
+    <model name="target_g4">
+      <static>true</static>
+      <pose>5 -2 0.002 0 0 0</pose>
+      <link name="link">
+        <visual name="pad">
+          <geometry><cylinder><radius>0.25</radius><length>0.004</length></cylinder></geometry>
+          <material><ambient>0.91 0.48 0.64 1</ambient><diffuse>0.91 0.48 0.64 1</diffuse></material>
         </visual>
       </link>
     </model>
