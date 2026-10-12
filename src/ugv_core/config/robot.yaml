@@ -1,0 +1,11 @@
+# Robot constants shared by every node ("/**" = applies to all nodes).
+# Keep in sync with my_bot_sim/models/my_bot/model.sdf and my_bot_sim/urdf/my_bot.urdf.
+/**:
+  ros__parameters:
+    wheel_radius: 0.1        # m
+    track_width: 0.4         # m, left-right wheel centre distance (B)
+    wheelbase: 0.3           # m, front-rear axle distance
+    slip_factor: 1.55        # chi, skid-steer effective-track factor (calibrate: ros2 run ugv_control slip_calibration)
+    max_wheel_speed: 8.0     # rad/s, command limit (motor no-load speed is 10 rad/s)
+    no_load_speed: 10.0      # rad/s at 100 % duty, unloaded
+    stall_torque: 5.0        # N m at 100 % duty, stalled (joint damping = stall/no_load = 0.5)
