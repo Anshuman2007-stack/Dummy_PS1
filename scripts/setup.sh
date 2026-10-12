@@ -15,7 +15,7 @@ source "/opt/ros/${ROS_DISTRO_NAME}/setup.bash"
 
 cd "$REPO_ROOT"
 sudo apt-get update
-sudo apt-get install -y xterm python3-colcon-common-extensions python3-rosdep
+sudo apt-get install -y xterm python3-colcon-common-extensions python3-rosdep python3-numpy python3-yaml python3-matplotlib
 if [ ! -d /etc/ros/rosdep/sources.list.d ]; then sudo rosdep init; fi
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y

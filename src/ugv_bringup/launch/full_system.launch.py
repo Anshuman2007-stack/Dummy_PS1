@@ -1,7 +1,9 @@
-"""Stage 6 - End-to-end system.
+"""Stage 6 - end-to-end system.
 
-Gazebo world + robot + bridge + true_pose_gps   (my_bot_sim/sim.launch.py)
-EKF + navigation controller + goal input        (ugv_nav/nav_stack.launch.py)
+  Gazebo + 4-wheel robot + bridge + TF + motor driver   (my_bot_sim/sim.launch.py)
+  encoder odometry + GPS                                (ugv_sensors/sensors.launch.py)
+  kinematics + wheel PID                                (ugv_control/control.launch.py)
+  EKF + navigation + goal input                         (ugv_nav/nav_stack.launch.py)
 
 Usage:
   ros2 launch ugv_bringup full_system.launch.py
@@ -17,17 +19,14 @@ from launch.substitutions import LaunchConfiguration
 
 
 def generate_launch_description():
-    sim_launch = os.path.join(
-        get_package_share_directory('my_bot_sim'), 'launch', 'sim.launch.py')
-    nav_launch = os.path.join(
-        get_package_share_directory('ugv_nav'), 'launch', 'nav_stack.launch.py')
-
-    sim = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(sim_launch),
+    share = get_package_share_directory
+    control = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(share('ugv_control'), 'launch', 'control.launch.py')),
         launch_arguments={'headless': LaunchConfiguration('headless')}.items())
-
     nav = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(nav_launch),
+        PythonLaunchDescriptionSource(
+            os.path.join(share('ugv_nav'), 'launch', 'nav_stack.launch.py')),
         launch_arguments={'goal_input': LaunchConfiguration('goal_input')}.items())
 
     return LaunchDescription([
@@ -35,6 +34,6 @@ def generate_launch_description():
                               description='true = Gazebo server only (no GUI)'),
         DeclareLaunchArgument('goal_input', default_value='auto',
                               description='auto | xterm | gnome-terminal | none'),
-        sim,
+        control,
         nav,
     ])

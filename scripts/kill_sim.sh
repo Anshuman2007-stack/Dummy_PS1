@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 # Kill leftover Gazebo / bridge / node processes after a crashed or Ctrl-C'd run.
-pkill -f "ign gazebo"           2>/dev/null
-pkill -f "ruby.*ign"          2>/dev/null
-pkill -f parameter_bridge     2>/dev/null
-pkill -f true_pose_gps        2>/dev/null
-pkill -f ekf_node             2>/dev/null
-pkill -f navigation_pid_node  2>/dev/null
-pkill -f goal_pose_node       2>/dev/null
+for p in "ign gazebo" "ruby.*ign" parameter_bridge robot_state_publisher motor_driver_sim \
+         wheel_odometry_node gps_node kinematics_node wheel_pid_node ekf_node navigation_node \
+         goal_pose_node mission_node ekf_eval_node pid_step_test slip_calibration; do
+  pkill -f "$p" 2>/dev/null
+done
 sleep 1
 echo "Remaining Gazebo/ROS processes (should be empty):"
-pgrep -af "ign gazebo|parameter_bridge|ekf_node|navigation_pid_node|true_pose_gps" || echo "  none"
+pgrep -af "ign gazebo|parameter_bridge|_node|motor_driver_sim" || echo "  none"
